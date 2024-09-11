@@ -43,7 +43,7 @@ jobs:
 
     - name: Run tests
       run: |
-        poetry run pytest tests/*
+        poetry run pytest tests/* --junitxml=pytest-results.xml
 
     - name: Upload test results
       uses: actions/upload-artifact@v4
