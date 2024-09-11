@@ -1,6 +1,6 @@
 # MagicFilter
 
-[![Build Status](https://github.com/yourusername/magicfilter/actions/workflows/tests.yml/badge.svg)](https://github.com/yourusername/magicfilter/actions/workflows/tests.yml)
+[![Build Status](https://github.com/devaccelclub/sqlalchemy-magicfilter/actions/workflows/run-tests.yml/badge.svg)](https://github.com/devaccelclub/sqlalchemy-magicfilter/actions/workflows/run-tests.yml)
 
 MagicFilter is a powerful and flexible filtering library for SQLAlchemy queries. It provides an intuitive way to build complex queries with support for nested relationships, custom operators, and eager loading.
 
