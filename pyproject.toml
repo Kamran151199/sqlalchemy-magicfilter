@@ -1,14 +1,22 @@
 [tool.poetry]
-name = "magic-filter"
+name = "magicfilter"
 version = "0.1.0"
 description = "Tool to build SQL expression for SQLAlchemy using magic filters"
 authors = ["KamranValijonov <valijonov.kamran@accelclub.pro>"]
 readme = "README.md"
 
+include = [
+    "magicfilter/**",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml"
+]
+
 [tool.poetry.dependencies]
 python = "^3.11"
 sqlalchemy = "^2.0.34"
 pytest = "^8.3.3"
+
 
 
 [build-system]
