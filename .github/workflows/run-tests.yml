@@ -1,0 +1,48 @@
+name: Run Tests
+
+on:
+  push:
+    branches:
+      - '*'  # This will trigger the workflow on push to any branch
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.11]  # For the future if we would like to test with higher versions of Python
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install Poetry
+      run: |
+        curl -sSL https://install.python-poetry.org | python3 -
+
+    - name: Cache Poetry dependencies
+      uses: actions/cache@v2
+      with:
+        path: ~/.cache/pypoetry
+        key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-poetry-
+
+    - name: Install dependencies
+      run: |
+        poetry install
+
+    - name: Run tests
+      run: |
+        poetry run pytest tests/*
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v2
+      with:
+        name: test-results
+        path: pytest-results.xml
+      if: ${{ always() }}  # This ensures that test results are always uploaded, even if tests fail
