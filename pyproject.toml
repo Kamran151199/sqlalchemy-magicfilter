@@ -16,6 +16,7 @@ include = [
 python = "^3.11"
 sqlalchemy = "^2.0.34"
 pytest = "^8.3.3"
+keyrings-google-artifactregistry-auth = "^1.1.2"
 
 
 
