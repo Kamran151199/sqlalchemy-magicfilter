@@ -10,6 +10,9 @@ MagicFilter is a powerful and flexible filtering library for SQLAlchemy queries.
 - Automatic handling of nested relationships
 - Custom operator support
 - Eager loading of related objects
+- Optional explicit `QuerySpec` mode for strict, repo-owned contracts
+- Optional explicit `LoadSpec` mode for eager-loading shape
+- Explicit per-relation filter strategy control in `QuerySpec` mode
 - Inspired by Django's filtering system
 
 ## Installation
@@ -72,12 +75,14 @@ This will create a query that:
 
 The `QueryBuilder` class is the main interface for building queries. It provides the following method:
 
-#### `build(model, filters=None, sort_attrs=None, schema=None)`
+#### `build(model, filters=None, sort_attrs=None, schema=None, *, spec=None, load_spec=None)`
 
 - `model`: The SQLAlchemy model to query
 - `filters`: A dictionary of filters to apply
 - `sort_attrs`: A list of attributes to sort by
-- `schema`: A dictionary describing how to eager load related objects
+- `schema`: A legacy dictionary describing how to eager load related objects
+- `spec`: An explicit query contract for strict repository-style usage
+- `load_spec`: An explicit eager-loading contract. Prefer this over `schema` in new code.
 
 ### Filters
 
@@ -85,13 +90,13 @@ Filters are specified using a dictionary where the keys are strings in the forma
 
 Available operators:
 
+- `eq` / `exact`
 - `isnull`
-- `exact` (default if no operator is specified)
 - `ne` (not equal)
 - `gt` (greater than)
-- `ge` (greater than or equal)
+- `ge` / `gte` (greater than or equal)
 - `lt` (less than)
-- `le` (less than or equal)
+- `le` / `lte` (less than or equal)
 - `in`
 - `notin`
 - `between`
@@ -108,10 +113,92 @@ Available operators:
 - `month`
 - `day`
 
+If no operator is specified, equality is used by default.
+
 ### Sorting
 
 Sorting is specified using a list of strings. Prefix a field with `-` for descending order.
 
-### Schema
+### Schema / Load Shape
 
-The schema is a dictionary that describes how to eager load related objects. It uses SQLAlchemy's relationship attributes as keys and can be nested.
+The legacy `schema` argument is a dictionary that describes how to eager load related objects. It uses SQLAlchemy's relationship attributes as keys and can be nested.
+
+For new code, prefer `LoadSpec`:
+
+```python
+from magicfilter import LoadFieldSpec, LoadSpec
+
+load_spec = LoadSpec(
+    fields=(
+        LoadFieldSpec(attr=User.profile, strategy="joined"),
+    ),
+)
+
+query = QueryBuilder().build(
+    model=User,
+    load_spec=load_spec,
+)
+```
+
+Supported load strategies:
+
+- `joined`
+- `selectin`
+
+### Strict QuerySpec Mode
+
+For repository-style usage where you want explicit ownership of what is filterable and sortable, pass a `QuerySpec` to `build(...)`.
+
+```python
+from magicfilter import QueryBuilder, QuerySpec, RelationFieldSpec, ScalarFieldSpec
+
+user_spec = QuerySpec(
+    root_model=User,
+    filter_fields={
+        "name": ScalarFieldSpec(User.name, frozenset({"eq", "startswith", "icontains"})),
+        "age": ScalarFieldSpec(User.age, frozenset({"eq", "gt", "gte", "lt", "lte"})),
+        "profile": RelationFieldSpec(
+            User.profile,
+            kind="one",
+            filter_strategy="auto",
+            target_fields={
+                "bio": ScalarFieldSpec(Profile.bio, frozenset({"eq", "icontains"})),
+            },
+        ),
+    },
+    sort_fields={
+        "name": User.name,
+        "age": User.age,
+    },
+)
+
+query = QueryBuilder().build(
+    model=User,
+    filters={"profile___bio__icontains": "engineer"},
+    sort_attrs=["-age"],
+    spec=user_spec,
+)
+```
+
+In `QuerySpec` mode:
+
+- only declared fields are queryable
+- only declared sort fields are sortable
+- relation filters compile through the declared strategy for each relation
+- invalid fields and operators fail deterministically
+
+### Relation Filter Strategy
+
+`RelationFieldSpec` supports an explicit `filter_strategy`:
+
+- `auto`
+- `join`
+- `has`
+- `any`
+
+`auto` resolves to:
+
+- `kind="one"` -> `.has(...)`
+- `kind="many"` -> `.any(...)`
+
+Use `join` only when you explicitly want join-shaped SQL. The default `auto` strategy is safer for count semantics and duplicate-row avoidance.

@@ -3,7 +3,17 @@ from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, func
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
-from magicfilter import QueryBuilder
+from magicfilter import (
+    AttributeResolutionError,
+    ConfigurationError,
+    LoadFieldSpec,
+    LoadSpec,
+    OperatorError,
+    QueryBuilder,
+    QuerySpec,
+    RelationFieldSpec,
+    ScalarFieldSpec,
+)
 
 Base = declarative_base()
 
@@ -75,6 +85,96 @@ def query_builder():
     return QueryBuilder()
 
 
+@pytest.fixture(scope="module")
+def user_query_spec():
+    return QuerySpec(
+        root_model=User,
+        filter_fields={
+            'name': ScalarFieldSpec(
+                User.name,
+                frozenset({
+                    'eq', 'exact', 'like', 'ilike', 'startswith', 'istartswith',
+                    'endswith', 'iendswith', 'contains', 'icontains',
+                }),
+            ),
+            'age': ScalarFieldSpec(
+                User.age,
+                frozenset({'eq', 'exact', 'gt', 'ge', 'gte', 'lt', 'le', 'lte', 'in', 'between'}),
+            ),
+            'created_at': ScalarFieldSpec(
+                User.created_at,
+                frozenset({'eq', 'exact', 'ge', 'gte', 'lt', 'le', 'lte', 'year', 'month', 'day'}),
+            ),
+            'profile': RelationFieldSpec(
+                User.profile,
+                kind='one',
+                target_fields={
+                    'id': ScalarFieldSpec(Profile.id, frozenset({'eq', 'exact', 'in'})),
+                    'bio': ScalarFieldSpec(
+                        Profile.bio,
+                        frozenset({
+                            'eq', 'exact', 'like', 'ilike', 'contains', 'icontains',
+                            'startswith', 'istartswith', 'endswith', 'iendswith',
+                        }),
+                    ),
+                    'bio_length': ScalarFieldSpec(
+                        Profile.bio_length,
+                        frozenset({'gt', 'ge', 'gte', 'lt', 'le', 'lte'}),
+                    ),
+                },
+            ),
+        },
+        sort_fields={
+            'name': User.name,
+            'age': User.age,
+        },
+    )
+
+
+@pytest.fixture(scope="module")
+def user_query_join_spec():
+    profile_fields = {
+        'id': ScalarFieldSpec(Profile.id, frozenset({'eq', 'exact', 'in'})),
+        'bio': ScalarFieldSpec(
+            Profile.bio,
+            frozenset({
+                'eq', 'exact', 'like', 'ilike', 'contains', 'icontains',
+                'startswith', 'istartswith', 'endswith', 'iendswith',
+            }),
+        ),
+        'bio_length': ScalarFieldSpec(
+            Profile.bio_length,
+            frozenset({'gt', 'ge', 'gte', 'lt', 'le', 'lte'}),
+        ),
+    }
+    return QuerySpec(
+        root_model=User,
+        filter_fields={
+            'name': ScalarFieldSpec(
+                User.name,
+                frozenset({
+                    'eq', 'exact', 'like', 'ilike', 'startswith', 'istartswith',
+                    'endswith', 'iendswith', 'contains', 'icontains',
+                }),
+            ),
+            'age': ScalarFieldSpec(
+                User.age,
+                frozenset({'eq', 'exact', 'gt', 'ge', 'gte', 'lt', 'le', 'lte', 'in', 'between'}),
+            ),
+            'profile': RelationFieldSpec(
+                User.profile,
+                kind='one',
+                filter_strategy='join',
+                target_fields=profile_fields,
+            ),
+        },
+        sort_fields={
+            'name': User.name,
+            'age': User.age,
+        },
+    )
+
+
 def test_build_simple_query(query_builder, session):
     query = query_builder.build(User)
     assert str(query) == 'SELECT users.id, users.name, users.age, users.created_at \nFROM users'
@@ -84,6 +184,15 @@ def test_build_query_with_filters(query_builder, session):
     filters = {"name": "John", "age__gt": 25}
     query = query_builder.build(User, filters=filters)
     assert "WHERE users.name = :name_1 AND users.age > :age_1" in str(query)
+
+
+def test_build_query_with_operator_aliases(query_builder, session):
+    filters = {"name__eq": "John", "age__gte": 25, "age__lte": 30}
+    query = query_builder.build(User, filters=filters)
+    compiled = str(query.compile(compile_kwargs={"literal_binds": True}))
+    assert "users.name = 'John'" in compiled
+    assert "users.age >= 25" in compiled
+    assert "users.age <= 30" in compiled
 
 
 def test_build_query_with_sorting(query_builder, session):
@@ -127,6 +236,17 @@ def test_build_query_with_nested_eager_loading(query_builder, session):
     from sqlalchemy.orm import joinedload, selectinload
     schema = {User.profile: (joinedload, {Profile.user: selectinload})}
     query = query_builder.build(User, schema=schema)
+    compiled = str(query.compile(compile_kwargs={"literal_binds": True}))
+    assert "LEFT OUTER JOIN profiles AS profiles_1" in compiled
+
+
+def test_build_query_with_explicit_load_spec(query_builder, session):
+    load_spec = LoadSpec(
+        fields=(
+            LoadFieldSpec(attr=User.profile, strategy="joined"),
+        ),
+    )
+    query = query_builder.build(User, load_spec=load_spec)
     compiled = str(query.compile(compile_kwargs={"literal_binds": True}))
     assert "LEFT OUTER JOIN profiles AS profiles_1" in compiled
 
@@ -288,6 +408,14 @@ def test_filter_with_case_insensitive_like(query_builder, session):
     assert "WHERE lower(users.name) LIKE lower('john')" in compiled
 
 
+def test_filter_with_case_insensitive_contains(query_builder, session):
+    filters = {"profile___bio__icontains": "engineer"}
+    query = query_builder.build(User, filters=filters)
+    compiled = str(query.compile(compile_kwargs={"literal_binds": True}))
+    assert "lower(profiles_1.bio) LIKE '%'" in compiled
+    assert "lower('engineer')" in compiled
+
+
 def test_complex_nested_relationships(query_builder, session):
     filters = {"profile___user___profile___bio__contains": "recursive"}
     query = query_builder.build(User, filters=filters)
@@ -297,3 +425,72 @@ def test_complex_nested_relationships(query_builder, session):
         or "LEFT OUTER JOIN users AS users_1 ON users_1.id = profiles_1.user_id" in compiled
     assert "LEFT OUTER JOIN profiles AS profiles_2 ON users_1.id = profiles_2.user_id" in compiled
     assert "profiles_2.bio LIKE '%' || 'recursive' || '%'" in compiled
+
+
+def test_build_query_with_explicit_spec_uses_exists(query_builder, session, user_query_spec):
+    filters = {"profile___bio__icontains": "engineer"}
+    query = query_builder.build(User, filters=filters, spec=user_query_spec)
+    compiled = str(query.compile(compile_kwargs={"literal_binds": True}))
+    assert "EXISTS (SELECT 1" in compiled
+    assert "LEFT OUTER JOIN profiles AS" not in compiled
+
+
+def test_build_query_with_explicit_spec_join_strategy_uses_join(
+    query_builder,
+    session,
+    user_query_join_spec,
+):
+    filters = {"profile___bio__icontains": "engineer"}
+    query = query_builder.build(User, filters=filters, spec=user_query_join_spec)
+    compiled = str(query.compile(compile_kwargs={"literal_binds": True}))
+    assert "LEFT OUTER JOIN profiles AS profiles_1" in compiled
+    assert "EXISTS (SELECT 1" not in compiled
+
+
+def test_explicit_spec_invalid_relation_strategy(query_builder, session):
+    invalid_spec = QuerySpec(
+        root_model=User,
+        filter_fields={
+            'profile': RelationFieldSpec(
+                User.profile,
+                kind='many',
+                filter_strategy='has',
+                target_fields={
+                    'bio': ScalarFieldSpec(Profile.bio, frozenset({'icontains'})),
+                },
+            ),
+        },
+    )
+    with pytest.raises(ConfigurationError):
+        query_builder.build(
+            User,
+            filters={"profile___bio__icontains": "engineer"},
+            spec=invalid_spec,
+        )
+
+
+def test_explicit_spec_rejects_unsupported_field(query_builder, session, user_query_spec):
+    with pytest.raises(AttributeResolutionError):
+        query_builder.build(
+            User,
+            filters={"profile___unknown": "value"},
+            spec=user_query_spec,
+        )
+
+
+def test_explicit_spec_rejects_unsupported_operator(query_builder, session, user_query_spec):
+    with pytest.raises(OperatorError):
+        query_builder.build(
+            User,
+            filters={"profile___bio__regex": "engineer"},
+            spec=user_query_spec,
+        )
+
+
+def test_explicit_spec_rejects_unsupported_sort(query_builder, session, user_query_spec):
+    with pytest.raises(AttributeResolutionError):
+        query_builder.build(
+            User,
+            sort_attrs=["created_at"],
+            spec=user_query_spec,
+        )

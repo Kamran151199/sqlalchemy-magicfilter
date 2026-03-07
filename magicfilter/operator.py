@@ -20,13 +20,16 @@ def between(column, value):
     return column.between(value[0], value[1])
 
 OPERATORS = {
+    'eq': operators.eq,
     'isnull': isnull,
     'exact': operators.eq,
     'ne': operators.ne,
     'gt': operators.gt,
     'ge': operators.ge,
+    'gte': operators.ge,
     'lt': operators.lt,
     'le': operators.le,
+    'lte': operators.le,
     'in': operators.in_op,
     'notin': operators.notin_op,
     'between': between,
@@ -37,7 +40,7 @@ OPERATORS = {
     'endswith': operators.endswith_op,
     'iendswith': operators.iendswith_op,
     'contains': operators.contains_op,
-    'icontains': operators.contains_op,
+    'icontains': operators.icontains_op,
     'regex': operators.regexp_match_op,
     'year': year,
     'month': month,
