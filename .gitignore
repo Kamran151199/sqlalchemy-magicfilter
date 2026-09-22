@@ -1,6 +1,7 @@
 .idea
 .ipynb_checkpoints
 .mypy_cache
+.vscode
 __pycache__
 .pytest_cache
 htmlcov
@@ -14,6 +15,7 @@ log.txt
 Pipfile.lock
 env3.*
 env
+**/.env
 docs_build
 site_build
 .venv
@@ -30,5 +32,3 @@ archive.zip
 .DS_Store
 .secrets
 **/*.db
-config.bat
-node_modules
